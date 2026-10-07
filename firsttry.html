@@ -1,0 +1,1913 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HL1 Style Audio Rate Player</title>
+
+<style>
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  padding: 24px;
+  background: #111;
+  color: #eee;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.player {
+  width: min(960px, 100%);
+  margin: 0 auto;
+}
+
+.drop {
+  border: 1px dashed #555;
+  border-radius: 12px;
+  padding: 30px;
+  text-align: center;
+  cursor: pointer;
+  background: #151515;
+  transition: border-color .12s ease, background .12s ease;
+  user-select: none;
+}
+
+.drop:hover,
+.drop.dragover {
+  border-color: #aaa;
+  background: #1b1b1b;
+}
+
+.drop strong {
+  display: block;
+  font-size: 16px;
+}
+
+.drop span {
+  display: block;
+  margin-top: 5px;
+  color: #888;
+  font-size: 13px;
+}
+
+#file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.wave-wrap {
+  position: relative;
+  margin-top: 16px;
+  background: #181818;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+#waveform {
+  width: 100%;
+  height: 230px;
+  display: block;
+}
+
+.playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: #fff;
+  pointer-events: none;
+  box-shadow: 0 0 4px rgba(255,255,255,.5);
+}
+
+.playhead::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -4px;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 6px solid #fff;
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.panel {
+  background: #181818;
+  border-radius: 10px;
+  padding: 18px;
+}
+
+button {
+  appearance: none;
+  border: 0;
+  border-radius: 7px;
+  padding: 11px 18px;
+  background: #eee;
+  color: #111;
+  font-weight: 650;
+  cursor: pointer;
+  margin-right: 7px;
+}
+
+button:disabled {
+  opacity: .35;
+  cursor: default;
+}
+
+button:hover:not(:disabled) {
+  background: #fff;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 20px;
+}
+
+.label {
+  color: #888;
+  font-size: 12px;
+}
+
+.value {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.big {
+  margin: 5px 0 22px;
+  font-size: 34px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.025em;
+}
+
+.range {
+  position: relative;
+  width: 100%;
+  height: 32px;
+}
+
+.range input[type="range"] {
+  position: absolute;
+  left: 0;
+  top: 5px;
+  width: 100%;
+  height: 20px;
+  margin: 0;
+  z-index: 2;
+  appearance: none;
+  background: transparent;
+}
+
+.range input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  background: #444;
+  border-radius: 2px;
+}
+
+.range input[type="range"]::-moz-range-track {
+  height: 4px;
+  background: #444;
+  border-radius: 2px;
+}
+
+.range input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border: 0;
+  border-radius: 50%;
+  background: #eee;
+}
+
+.range input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 50%;
+  background: #eee;
+}
+
+.marker {
+  position: absolute;
+  top: 4px;
+  width: 2px;
+  height: 22px;
+  background: #777;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.marker span {
+  position: absolute;
+  top: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #777;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.range-labels {
+  display: flex;
+  justify-content: space-between;
+  color: #666;
+  font-size: 10px;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 9px;
+  margin-top: 17px;
+}
+
+.stat {
+  background: #111;
+  padding: 11px;
+  border-radius: 7px;
+}
+
+.stat strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.graph-title {
+  margin-top: 19px;
+  margin-bottom: 7px;
+}
+
+#graph {
+  width: 100%;
+  height: 170px;
+  display: block;
+  background: #111;
+  border-radius: 8px;
+}
+
+.note {
+  margin-top: 9px;
+  color: #666;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.error {
+  min-height: 18px;
+  margin-top: 10px;
+  color: #d88;
+  font-size: 12px;
+}
+
+@media (max-width: 700px) {
+  .controls {
+    grid-template-columns: 1fr;
+  }
+
+  .stats {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+</style>
+</head>
+
+<body>
+
+<div class="player">
+
+  <div class="drop" id="drop" tabindex="0">
+    <input
+      id="file"
+      type="file"
+      accept="audio/*,.wav,.wave,.aiff,.aif,.mp3,.ogg,.flac,.m4a"
+    >
+    <strong>Drop audio here</strong>
+    <span id="filename">or click to choose a file</span>
+  </div>
+
+  <div class="wave-wrap">
+    <canvas id="waveform"></canvas>
+    <div id="playhead" class="playhead"></div>
+  </div>
+
+  <div class="controls">
+
+    <section class="panel">
+
+      <button id="play" disabled>Play loop</button>
+      <button id="stop" disabled>Stop</button>
+
+      <div class="stats">
+
+        <div class="stat">
+          <div class="label">Original sample rate</div>
+          <strong id="sampleRate">--</strong>
+        </div>
+
+        <div class="stat">
+          <div class="label">Decoded rate</div>
+          <strong id="decodedRate">--</strong>
+        </div>
+
+        <div class="stat">
+          <div class="label">Duration</div>
+          <strong id="duration">--</strong>
+        </div>
+
+      </div>
+
+      <div class="note">
+        WAV PCM files are read directly. Other formats are decoded by the browser.
+      </div>
+
+    </section>
+
+    <section class="panel">
+
+      <div class="row">
+        <span class="label">Current playback rate</span>
+        <span class="value" id="currentRate">1.000x</span>
+      </div>
+
+      <div class="big" id="currentRateBig">1.000x</div>
+
+      <div class="row">
+        <span class="label">Target playback rate</span>
+        <span class="value" id="targetRate">1.000x</span>
+      </div>
+
+      <div class="range">
+
+        <input
+          id="rate"
+          type="range"
+          min="0.25"
+          max="4"
+          step="0.001"
+          value="1"
+          disabled
+        >
+
+        <div class="marker default-rate">
+          <span>1.000x</span>
+        </div>
+
+      </div>
+
+      <div class="range-labels">
+        <span>0.25x</span>
+        <span>1x</span>
+        <span>4x</span>
+      </div>
+
+      <div class="row" style="margin-top:20px">
+        <span class="label">Ease speed</span>
+        <span class="value" id="easeValue">1.00 / s</span>
+      </div>
+
+      <div class="range">
+
+        <input
+          id="ease"
+          type="range"
+          min="0.05"
+          max="20"
+          step="0.05"
+          value="1"
+        >
+
+        <div class="marker default-ease">
+          <span>1 / s</span>
+        </div>
+
+      </div>
+
+      <div class="range-labels">
+        <span>0.05 / s</span>
+        <span>1 / s</span>
+        <span>20 / s</span>
+      </div>
+
+      <div style="margin-top:14px">
+        <button id="resetControls" type="button">
+          Reset
+        </button>
+      </div>
+
+      <div class="label graph-title">
+        Playback-rate response
+      </div>
+
+      <canvas id="graph"></canvas>
+
+      <div class="note">
+        White = current rate. Dashed = target rate.
+        Faint horizontal line = 1x.
+      </div>
+
+    </section>
+
+  </div>
+
+  <div id="error" class="error"></div>
+
+</div>
+
+<script>
+"use strict";
+
+/* ELEMENTS */
+
+const fileInput = document.getElementById("file");
+const drop = document.getElementById("drop");
+const filename = document.getElementById("filename");
+
+const playButton = document.getElementById("play");
+const stopButton = document.getElementById("stop");
+const resetControls = document.getElementById("resetControls");
+
+const sampleRateEl = document.getElementById("sampleRate");
+const decodedRateEl = document.getElementById("decodedRate");
+const durationEl = document.getElementById("duration");
+
+const rateSlider = document.getElementById("rate");
+const easeSlider = document.getElementById("ease");
+
+const currentRateEl = document.getElementById("currentRate");
+const currentRateBig = document.getElementById("currentRateBig");
+const targetRateEl = document.getElementById("targetRate");
+const easeValueEl = document.getElementById("easeValue");
+
+const waveformCanvas = document.getElementById("waveform");
+const graphCanvas = document.getElementById("graph");
+const playhead = document.getElementById("playhead");
+const errorEl = document.getElementById("error");
+
+const rateMarker = document.querySelector(".default-rate");
+const easeMarker = document.querySelector(".default-ease");
+
+/* STATE */
+
+let audioContext = null;
+let workletNode = null;
+let workletReady = false;
+
+let audioData = null;
+
+let targetRate = 1;
+let currentRate = 1;
+
+let playbackPosition = 0;
+let isPlaying = false;
+
+let lastWorkletPosition = 0;
+let lastWorkletRate = 1;
+let lastWorkletTime = performance.now();
+
+const rateHistory = [];
+const MAX_HISTORY = 180;
+
+/* UTILITIES */
+
+function showError(message) {
+  errorEl.textContent = message || "";
+}
+
+function formatRate(value) {
+  return value.toFixed(3) + "x";
+}
+
+function formatDuration(seconds) {
+  const minutes = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+
+  return minutes + ":" + String(secs).padStart(2, "0");
+}
+
+function readString(view, offset, length) {
+  let result = "";
+
+  for (let i = 0; i < length; i++) {
+    result += String.fromCharCode(view.getUint8(offset + i));
+  }
+
+  return result;
+}
+
+/* SLIDER MARKERS */
+
+function positionMarker(slider, marker, value) {
+  const min = Number(slider.min);
+  const max = Number(slider.max);
+
+  const fraction = (value - min) / (max - min);
+  const thumbRadius = 7;
+
+  const width = slider.clientWidth;
+
+  const x =
+    thumbRadius +
+    fraction * (width - thumbRadius * 2);
+
+  marker.style.left = x + "px";
+}
+
+function positionDefaultMarkers() {
+  positionMarker(rateSlider, rateMarker, 1);
+  positionMarker(easeSlider, easeMarker, 1);
+}
+
+/* WAV SAMPLE RATE */
+
+function detectOriginalSampleRate(arrayBuffer) {
+
+  const view = new DataView(arrayBuffer);
+
+  if (view.byteLength < 12) {
+    return null;
+  }
+
+  if (
+    readString(view, 0, 4) === "RIFF" &&
+    readString(view, 8, 4) === "WAVE"
+  ) {
+
+    let offset = 12;
+
+    while (offset + 8 <= view.byteLength) {
+
+      const id = readString(view, offset, 4);
+      const size = view.getUint32(offset + 4, true);
+
+      if (id === "fmt " && size >= 16) {
+        return view.getUint32(offset + 12, true);
+      }
+
+      offset += 8 + size + (size & 1);
+    }
+  }
+
+  return null;
+}
+
+/* WAV PCM DECODER */
+
+function parseWavPCM(arrayBuffer) {
+
+  const view = new DataView(arrayBuffer);
+
+  if (
+    view.byteLength < 12 ||
+    readString(view, 0, 4) !== "RIFF" ||
+    readString(view, 8, 4) !== "WAVE"
+  ) {
+    return null;
+  }
+
+  let fmt = null;
+  let dataOffset = -1;
+  let dataSize = 0;
+
+  let offset = 12;
+
+  while (offset + 8 <= view.byteLength) {
+
+    const id = readString(view, offset, 4);
+    const size = view.getUint32(offset + 4, true);
+    const start = offset + 8;
+
+    if (id === "fmt " && size >= 16) {
+
+      fmt = {
+        format: view.getUint16(start, true),
+        channels: view.getUint16(start + 2, true),
+        sampleRate: view.getUint32(start + 4, true),
+        blockAlign: view.getUint16(start + 12, true),
+        bits: view.getUint16(start + 14, true)
+      };
+    }
+
+    if (id === "data") {
+
+      dataOffset = start;
+
+      dataSize = Math.min(
+        size,
+        view.byteLength - start
+      );
+    }
+
+    offset += 8 + size + (size & 1);
+  }
+
+  if (!fmt || dataOffset < 0) {
+    return null;
+  }
+
+  if (
+    fmt.format !== 1 ||
+    (fmt.bits !== 8 && fmt.bits !== 16) ||
+    fmt.channels < 1 ||
+    fmt.channels > 2
+  ) {
+    return null;
+  }
+
+  const bytesPerSample = fmt.bits / 8;
+  const frameSize = fmt.channels * bytesPerSample;
+
+  if (fmt.blockAlign !== frameSize) {
+    return null;
+  }
+
+  const frames = Math.floor(dataSize / frameSize);
+
+  if (frames <= 0) {
+    return null;
+  }
+
+  const left = new Float32Array(frames);
+  const right = new Float32Array(frames);
+
+  for (let frame = 0; frame < frames; frame++) {
+
+    const base = dataOffset + frame * frameSize;
+
+    if (fmt.bits === 8) {
+
+      left[frame] =
+        (view.getUint8(base) - 128) / 128;
+
+      if (fmt.channels === 2) {
+
+        right[frame] =
+          (view.getUint8(base + 1) - 128) / 128;
+
+      } else {
+
+        right[frame] = left[frame];
+      }
+
+    } else {
+
+      left[frame] =
+        view.getInt16(base, true) / 32768;
+
+      if (fmt.channels === 2) {
+
+        right[frame] =
+          view.getInt16(base + 2, true) / 32768;
+
+      } else {
+
+        right[frame] = left[frame];
+      }
+    }
+  }
+
+  return {
+    left,
+    right,
+    sampleRate: fmt.sampleRate,
+    length: frames,
+    duration: frames / fmt.sampleRate
+  };
+}
+
+/* AUDIO WORKLET */
+
+const workletCode = `
+class HL1RateProcessor extends AudioWorkletProcessor {
+
+  constructor() {
+    super();
+
+    this.left = null;
+    this.right = null;
+
+    this.length = 0;
+    this.sourceRate = 44100;
+
+    this.positionFixed = 0;
+
+    this.targetRate = 1;
+    this.currentRate = 1;
+    this.ease = 1;
+
+    this.playing = false;
+
+    this.reportCounter = 0;
+
+    this.port.onmessage = (event) => {
+
+      const data = event.data;
+
+      if (data.type === "load") {
+
+        this.left = data.left;
+        this.right = data.right;
+
+        this.length = this.left
+          ? this.left.length
+          : 0;
+
+        this.sourceRate = data.sourceRate;
+
+        this.positionFixed = 0;
+
+        this.targetRate = 1;
+        this.currentRate = 1;
+        this.ease = 1;
+
+        this.playing = false;
+
+        this.reportCounter = 0;
+
+        return;
+      }
+
+      if (data.type === "play") {
+
+        if (this.length > 0) {
+
+          this.positionFixed =
+            Math.floor(
+              data.position * 65536
+            );
+
+          this.positionFixed =
+            Math.max(
+              0,
+              Math.min(
+                this.length * 65536 - 1,
+                this.positionFixed
+              )
+            );
+
+          this.playing = true;
+        }
+
+        return;
+      }
+
+      if (data.type === "stop") {
+
+        this.playing = false;
+        this.positionFixed = 0;
+
+        this.port.postMessage({
+          type: "state",
+          position: 0,
+          rate: this.currentRate
+        });
+
+        return;
+      }
+
+      if (data.type === "rate") {
+
+        this.targetRate = data.value;
+
+        return;
+      }
+
+      if (data.type === "ease") {
+
+        this.ease = data.value;
+
+        return;
+      }
+
+      if (data.type === "reset") {
+
+        this.targetRate = 1;
+        this.currentRate = 1;
+        this.ease = 1;
+
+        return;
+      }
+    };
+  }
+
+  process(inputs, outputs) {
+
+    const output = outputs[0];
+
+    if (!output || !output.length) {
+      return true;
+    }
+
+    const frames = output[0].length;
+
+    if (!this.left || this.length === 0) {
+
+      for (let c = 0; c < output.length; c++) {
+        output[c].fill(0);
+      }
+
+      return true;
+    }
+
+    const fixedOne = 65536;
+
+    const baseStep =
+      this.sourceRate / sampleRate;
+
+    for (let i = 0; i < frames; i++) {
+
+      if (!this.playing) {
+
+        for (let c = 0; c < output.length; c++) {
+          output[c][i] = 0;
+        }
+
+        continue;
+      }
+
+      const alpha =
+        1 - Math.exp(
+          -this.ease / sampleRate
+        );
+
+      this.currentRate +=
+        (this.targetRate - this.currentRate) *
+        alpha;
+
+      if (
+        Math.abs(
+          this.targetRate - this.currentRate
+        ) < 0.0000001
+      ) {
+        this.currentRate = this.targetRate;
+      }
+
+      if (
+        this.positionFixed >=
+        this.length * fixedOne
+      ) {
+        this.positionFixed =
+          this.positionFixed %
+          (this.length * fixedOne);
+      }
+
+      const index =
+        Math.floor(
+          this.positionFixed / fixedOne
+        );
+
+      const left = this.left[index];
+      const right = this.right[index];
+
+      if (output.length >= 1) {
+        output[0][i] = left;
+      }
+
+      if (output.length >= 2) {
+        output[1][i] = right;
+      }
+
+      /*
+        HL1-style source stepping:
+        no interpolation.
+
+        The source position advances by:
+
+          sourceRate / outputRate * playbackRate
+
+        and the integer source sample is read.
+      */
+
+      const stepFixed =
+        Math.max(
+          1,
+          Math.round(
+            baseStep *
+            this.currentRate *
+            fixedOne
+          )
+        );
+
+      this.positionFixed += stepFixed;
+
+      if (
+        this.positionFixed >=
+        this.length * fixedOne
+      ) {
+        this.positionFixed =
+          this.positionFixed %
+          (this.length * fixedOne);
+      }
+    }
+
+    this.reportCounter += frames;
+
+    if (this.reportCounter >= 256) {
+
+      this.reportCounter = 0;
+
+      this.port.postMessage({
+        type: "state",
+        position:
+          this.positionFixed / fixedOne,
+        rate:
+          this.currentRate
+      });
+    }
+
+    return true;
+  }
+}
+
+registerProcessor(
+  "hl1-rate-processor",
+  HL1RateProcessor
+);
+`;
+
+async function ensureAudioContext() {
+
+  if (!audioContext) {
+
+    audioContext =
+      new (
+        window.AudioContext ||
+        window.webkitAudioContext
+      )();
+  }
+
+  if (!audioContext.audioWorklet) {
+    throw new Error(
+      "AudioWorklet is not supported by this browser."
+    );
+  }
+
+  if (!workletReady) {
+
+    const blob = new Blob(
+      [workletCode],
+      {
+        type: "application/javascript"
+      }
+    );
+
+    const url =
+      URL.createObjectURL(blob);
+
+    try {
+
+      await audioContext.audioWorklet.addModule(
+        url
+      );
+
+      workletReady = true;
+
+    } finally {
+
+      URL.revokeObjectURL(url);
+    }
+  }
+}
+
+async function createWorklet() {
+
+  await ensureAudioContext();
+
+  if (workletNode) {
+
+    try {
+      workletNode.port.postMessage({
+        type: "stop"
+      });
+    } catch (_) {}
+
+    try {
+      workletNode.disconnect();
+    } catch (_) {}
+
+    workletNode = null;
+  }
+
+  workletNode =
+    new AudioWorkletNode(
+      audioContext,
+      "hl1-rate-processor",
+      {
+        numberOfInputs: 0,
+        numberOfOutputs: 1,
+        outputChannelCount: [2]
+      }
+    );
+
+  workletNode.port.onmessage =
+    event => {
+
+      const data = event.data;
+
+      if (data.type !== "state") {
+        return;
+      }
+
+      playbackPosition =
+        data.position;
+
+      currentRate =
+        data.rate;
+
+      lastWorkletPosition =
+        data.position;
+
+      lastWorkletRate =
+        data.rate;
+
+      lastWorkletTime =
+        performance.now();
+    };
+
+  workletNode.connect(
+    audioContext.destination
+  );
+}
+
+/* FILE LOADING */
+
+async function loadFile(file) {
+
+  if (!file) {
+    return;
+  }
+
+  showError("");
+
+  filename.textContent =
+    file.name;
+
+  try {
+
+    const bytes =
+      await file.arrayBuffer();
+
+    const originalRate =
+      detectOriginalSampleRate(bytes);
+
+    sampleRateEl.textContent =
+      originalRate
+        ? originalRate.toLocaleString() + " Hz"
+        : "Unknown";
+
+    let data =
+      parseWavPCM(bytes);
+
+    /*
+      For non-WAV formats, let the browser decode them.
+      Playback after decoding is still performed by our
+      own AudioWorklet.
+    */
+
+    if (!data) {
+
+      if (!audioContext) {
+
+        audioContext =
+          new (
+            window.AudioContext ||
+            window.webkitAudioContext
+          )();
+      }
+
+      const decoded =
+        await audioContext.decodeAudioData(
+          bytes.slice(0)
+        );
+
+      const left =
+        new Float32Array(
+          decoded.getChannelData(0)
+        );
+
+      const right =
+        decoded.numberOfChannels > 1
+          ? new Float32Array(
+              decoded.getChannelData(1)
+            )
+          : new Float32Array(left);
+
+      data = {
+        left,
+        right,
+        sampleRate:
+          decoded.sampleRate,
+        length:
+          decoded.length,
+        duration:
+          decoded.duration
+      };
+    }
+
+    /*
+      IMPORTANT:
+      Keep these arrays on the main thread.
+      We send CLONES to the worklet instead of
+      transferring the originals.
+    */
+
+    audioData = data;
+
+    decodedRateEl.textContent =
+      data.sampleRate.toLocaleString() +
+      " Hz";
+
+    durationEl.textContent =
+      formatDuration(
+        data.duration
+      );
+
+    drawWaveform(data.left);
+
+    await createWorklet();
+
+    const workletLeft =
+      new Float32Array(
+        data.left
+      );
+
+    const workletRight =
+      new Float32Array(
+        data.right
+      );
+
+    workletNode.port.postMessage(
+      {
+        type: "load",
+        left: workletLeft,
+        right: workletRight,
+        sourceRate:
+          data.sampleRate
+      },
+      [
+        workletLeft.buffer,
+        workletRight.buffer
+      ]
+    );
+
+    targetRate = 1;
+    currentRate = 1;
+
+    playbackPosition = 0;
+    isPlaying = false;
+
+    lastWorkletPosition = 0;
+    lastWorkletRate = 1;
+    lastWorkletTime =
+      performance.now();
+
+    rateSlider.value = "1";
+    easeSlider.value = "1";
+
+    currentRateEl.textContent =
+      "1.000x";
+
+    currentRateBig.textContent =
+      "1.000x";
+
+    targetRateEl.textContent =
+      "1.000x";
+
+    easeValueEl.textContent =
+      "1.00 / s";
+
+    rateHistory.length = 0;
+    rateHistory.push(1);
+
+    playButton.disabled = false;
+    stopButton.disabled = false;
+    rateSlider.disabled = false;
+
+    updatePlayhead();
+
+  } catch (error) {
+
+    console.error(error);
+
+    showError(
+      error && error.message
+        ? error.message
+        : "Could not load this audio file."
+    );
+  }
+}
+
+/* FILE DROP */
+
+drop.addEventListener(
+  "click",
+  () => fileInput.click()
+);
+
+drop.addEventListener(
+  "keydown",
+  event => {
+
+    if (
+      event.key === "Enter" ||
+      event.key === " "
+    ) {
+
+      event.preventDefault();
+      fileInput.click();
+    }
+  }
+);
+
+["dragenter", "dragover"]
+.forEach(type => {
+
+  drop.addEventListener(
+    type,
+    event => {
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      drop.classList.add(
+        "dragover"
+      );
+    }
+  );
+});
+
+["dragleave", "drop"]
+.forEach(type => {
+
+  drop.addEventListener(
+    type,
+    event => {
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      drop.classList.remove(
+        "dragover"
+      );
+    }
+  );
+});
+
+drop.addEventListener(
+  "drop",
+  event => {
+
+    const files =
+      event.dataTransfer.files;
+
+    if (
+      files &&
+      files.length
+    ) {
+      loadFile(files[0]);
+    }
+  }
+);
+
+fileInput.addEventListener(
+  "change",
+  () => {
+
+    if (
+      fileInput.files &&
+      fileInput.files.length
+    ) {
+      loadFile(fileInput.files[0]);
+    }
+  }
+);
+
+/* WAVEFORM */
+
+function drawWaveform(data) {
+
+  if (!data || !data.length) {
+    return;
+  }
+
+  const rect =
+    waveformCanvas.getBoundingClientRect();
+
+  const dpr =
+    window.devicePixelRatio || 1;
+
+  const width =
+    Math.max(
+      1,
+      Math.round(
+        rect.width * dpr
+      )
+    );
+
+  const height =
+    Math.max(
+      1,
+      Math.round(
+        rect.height * dpr
+      )
+    );
+
+  waveformCanvas.width =
+    width;
+
+  waveformCanvas.height =
+    height;
+
+  const ctx =
+    waveformCanvas.getContext(
+      "2d"
+    );
+
+  ctx.fillStyle =
+    "#181818";
+
+  ctx.fillRect(
+    0,
+    0,
+    width,
+    height
+  );
+
+  const middle =
+    height / 2;
+
+  ctx.strokeStyle =
+    "#303030";
+
+  ctx.lineWidth = 1;
+
+  ctx.beginPath();
+  ctx.moveTo(
+    0,
+    middle
+  );
+  ctx.lineTo(
+    width,
+    middle
+  );
+  ctx.stroke();
+
+  const samplesPerPixel =
+    Math.max(
+      1,
+      Math.floor(
+        data.length / width
+      )
+    );
+
+  ctx.strokeStyle =
+    "#aaa";
+
+  ctx.beginPath();
+
+  for (
+    let x = 0;
+    x < width;
+    x++
+  ) {
+
+    const start =
+      x *
+      samplesPerPixel;
+
+    const end =
+      Math.min(
+        data.length,
+        start +
+        samplesPerPixel
+      );
+
+    let min = 1;
+    let max = -1;
+
+    for (
+      let i = start;
+      i < end;
+      i++
+    ) {
+
+      const value =
+        data[i];
+
+      if (value < min) {
+        min = value;
+      }
+
+      if (value > max) {
+        max = value;
+      }
+    }
+
+    ctx.moveTo(
+      x,
+      middle +
+      min *
+      middle *
+      0.85
+    );
+
+    ctx.lineTo(
+      x,
+      middle +
+      max *
+      middle *
+      0.85
+    );
+  }
+
+  ctx.stroke();
+}
+
+/* PLAY / STOP */
+
+async function startPlayback() {
+
+  if (
+    !audioContext ||
+    !workletNode ||
+    !audioData
+  ) {
+    return;
+  }
+
+  if (
+    audioContext.state ===
+    "suspended"
+  ) {
+
+    try {
+      await audioContext.resume();
+    } catch (error) {
+      showError(
+        "Could not start audio."
+      );
+      return;
+    }
+  }
+
+  if (isPlaying) {
+    return;
+  }
+
+  isPlaying = true;
+
+  workletNode.port.postMessage(
+    {
+      type: "play",
+      position:
+        playbackPosition
+    }
+  );
+
+  playButton.textContent =
+    "Playing";
+}
+
+function stopPlayback() {
+
+  isPlaying = false;
+  playbackPosition = 0;
+
+  if (workletNode) {
+
+    workletNode.port.postMessage(
+      {
+        type: "stop"
+      }
+    );
+  }
+
+  playButton.textContent =
+    "Play loop";
+
+  updatePlayhead();
+}
+
+playButton.addEventListener(
+  "click",
+  startPlayback
+);
+
+stopButton.addEventListener(
+  "click",
+  stopPlayback
+);
+
+/* RATE CONTROLS */
+
+rateSlider.addEventListener(
+  "input",
+  () => {
+
+    targetRate =
+      Number(
+        rateSlider.value
+      );
+
+    targetRateEl.textContent =
+      formatRate(
+        targetRate
+      );
+
+    if (workletNode) {
+
+      workletNode.port.postMessage(
+        {
+          type: "rate",
+          value: targetRate
+        }
+      );
+    }
+  }
+);
+
+easeSlider.addEventListener(
+  "input",
+  () => {
+
+    const value =
+      Number(
+        easeSlider.value
+      );
+
+    easeValueEl.textContent =
+      value.toFixed(2) +
+      " / s";
+
+    if (workletNode) {
+
+      workletNode.port.postMessage(
+        {
+          type: "ease",
+          value
+        }
+      );
+    }
+  }
+);
+
+/* RESET */
+
+resetControls.addEventListener(
+  "click",
+  () => {
+
+    targetRate = 1;
+    currentRate = 1;
+
+    rateSlider.value = "1";
+    easeSlider.value = "1";
+
+    targetRateEl.textContent =
+      "1.000x";
+
+    currentRateEl.textContent =
+      "1.000x";
+
+    currentRateBig.textContent =
+      "1.000x";
+
+    easeValueEl.textContent =
+      "1.00 / s";
+
+    if (workletNode) {
+
+      workletNode.port.postMessage(
+        {
+          type: "reset"
+        }
+      );
+    }
+
+    rateHistory.length = 0;
+    rateHistory.push(1);
+
+    positionDefaultMarkers();
+  }
+);
+
+/* PLAYHEAD */
+
+function getDisplayedPosition(now) {
+
+  if (
+    !audioData ||
+    !audioData.length
+  ) {
+    return 0;
+  }
+
+  if (!isPlaying) {
+    return playbackPosition;
+  }
+
+  const elapsed =
+    Math.max(
+      0,
+      now - lastWorkletTime
+    ) / 1000;
+
+  let position =
+    lastWorkletPosition +
+    elapsed *
+    lastWorkletRate *
+    (
+      audioData.sampleRate /
+      audioContext.sampleRate
+    );
+
+  position %=
+    audioData.length;
+
+  return position;
+}
+
+function updatePlayhead() {
+
+  if (
+    !audioData ||
+    !audioData.length
+  ) {
+
+    playhead.style.left =
+      "0%";
+
+    return;
+  }
+
+  const position =
+    getDisplayedPosition(
+      performance.now()
+    );
+
+  const fraction =
+    position /
+    audioData.length;
+
+  playhead.style.left =
+    Math.max(
+      0,
+      Math.min(
+        1,
+        fraction
+      )
+    ) *
+    100 +
+    "%";
+}
+
+/* GRAPH */
+
+function drawRateGraph() {
+
+  const rect =
+    graphCanvas.getBoundingClientRect();
+
+  const dpr =
+    window.devicePixelRatio || 1;
+
+  const width =
+    Math.max(
+      1,
+      Math.round(
+        rect.width * dpr
+      )
+    );
+
+  const height =
+    Math.max(
+      1,
+      Math.round(
+        rect.height * dpr
+      )
+    );
+
+  graphCanvas.width =
+    width;
+
+  graphCanvas.height =
+    height;
+
+  const ctx =
+    graphCanvas.getContext(
+      "2d"
+    );
+
+  ctx.fillStyle =
+    "#111";
+
+  ctx.fillRect(
+    0,
+    0,
+    width,
+    height
+  );
+
+  const minRate = 0.25;
+  const maxRate = 4;
+
+  function y(rate) {
+
+    const normalized =
+      (rate - minRate) /
+      (maxRate - minRate);
+
+    return height -
+      normalized * height;
+  }
+
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "#222";
+
+  [0.25, 2, 3, 4]
+  .forEach(rate => {
+
+    const yy =
+      y(rate);
+
+    ctx.beginPath();
+    ctx.moveTo(
+      0,
+      yy
+    );
+    ctx.lineTo(
+      width,
+      yy
+    );
+    ctx.stroke();
+  });
+
+  ctx.strokeStyle =
+    "#3b3b3b";
+
+  ctx.beginPath();
+  ctx.moveTo(
+    0,
+    y(1)
+  );
+  ctx.lineTo(
+    width,
+    y(1)
+  );
+  ctx.stroke();
+
+  ctx.setLineDash([
+    6,
+    5
+  ]);
+
+  ctx.strokeStyle =
+    "#666";
+
+  ctx.lineWidth = 1.5;
+
+  ctx.beginPath();
+  ctx.moveTo(
+    0,
+    y(targetRate)
+  );
+  ctx.lineTo(
+    width,
+    y(targetRate)
+  );
+  ctx.stroke();
+
+  ctx.setLineDash([]);
+
+  if (
+    rateHistory.length < 2
+  ) {
+    return;
+  }
+
+  ctx.strokeStyle =
+    "#eee";
+
+  ctx.lineWidth = 2;
+
+  ctx.beginPath();
+
+  rateHistory.forEach(
+    (rate, index) => {
+
+      const x =
+        index /
+        (MAX_HISTORY - 1) *
+        width;
+
+      const yy =
+        y(rate);
+
+      if (index === 0) {
+        ctx.moveTo(x, yy);
+      } else {
+        ctx.lineTo(x, yy);
+      }
+    }
+  );
+
+  ctx.stroke();
+}
+
+/* UI LOOP */
+
+function updateUI() {
+
+  if (isPlaying) {
+
+    playbackPosition =
+      getDisplayedPosition(
+        performance.now()
+      );
+  }
+
+  currentRateEl.textContent =
+    formatRate(
+      currentRate
+    );
+
+  currentRateBig.textContent =
+    formatRate(
+      currentRate
+    );
+
+  if (isPlaying) {
+
+    rateHistory.push(
+      currentRate
+    );
+
+    if (
+      rateHistory.length >
+      MAX_HISTORY
+    ) {
+      rateHistory.shift();
+    }
+  }
+
+  drawRateGraph();
+  updatePlayhead();
+
+  requestAnimationFrame(
+    updateUI
+  );
+}
+
+/* RESIZE */
+
+window.addEventListener(
+  "resize",
+  () => {
+
+    positionDefaultMarkers();
+
+    if (
+      audioData &&
+      audioData.left
+    ) {
+      drawWaveform(
+        audioData.left
+      );
+    }
+
+    drawRateGraph();
+  }
+);
+
+/* INITIALIZE */
+
+easeValueEl.textContent =
+  "1.00 / s";
+
+positionDefaultMarkers();
+drawRateGraph();
+
+requestAnimationFrame(
+  updateUI
+);
+
+</script>
+
+</body>
+</html>

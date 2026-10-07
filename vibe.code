@@ -1,0 +1,146 @@
+Build a browser-based online audio player as a single self-contained HTML file.
+
+Core behavior:
+
+I drop an audio file onto the page. The player displays a waveform preview of the actual decoded PCM data. There are Play Loop and Stop buttons. Play starts the audio and loops continuously until Stop is pressed. Do not autoplay when the file is dropped.
+
+Display:
+- Original/input sample rate.
+- Decoded/output sample rate.
+- Duration.
+- Current playback rate.
+- Target playback rate.
+- Ease speed.
+- A waveform with a visible playhead showing the actual current position in the audio.
+- A playback-rate graph showing current rate and target rate, with a faint 1.000x reference line.
+
+Playback-rate implementation is important:
+
+Do NOT use `AudioBufferSourceNode.playbackRate`. Do NOT let the browser's normal playback-rate resampler determine the sound.
+
+Instead, use an `AudioWorkletProcessor` and feed it decoded PCM samples. The worklet must perform the rate change itself.
+
+The playback algorithm should be HL1/GoldSrc-style sample stepping:
+
+1. Keep the source PCM samples in memory.
+2. Maintain a fractional/fixed-point source position.
+3. For every output sample, calculate:
+
+`sourceStep = (sourceSampleRate / outputSampleRate) * currentPlaybackRate`
+
+4. Advance the source position by `sourceStep`.
+5. Read the source sample at `floor(sourcePosition)`.
+6. Do NOT interpolate between adjacent samples.
+7. When the source position reaches the end of the buffer, wrap it back to the beginning so playback loops continuously.
+
+Therefore:
+- 1.0x reads the source at normal speed.
+- 2.0x advances through source samples twice as quickly.
+- 0.5x advances half as quickly.
+- Sample values themselves are not modified; the read position changes.
+- The implementation should use fixed-point or equivalent precise fractional stepping to avoid accumulating timing error.
+
+Rate smoothing:
+
+There are two values:
+- `targetRate`: where the slider is set.
+- `currentRate`: the rate actually being used by the audio worklet.
+
+When the target changes, smoothly move `currentRate` toward `targetRate` rather than jumping immediately.
+
+Use exponential easing approximately like:
+
+`alpha = 1 - exp(-easeSpeed * dt)`
+
+`currentRate += (targetRate - currentRate) * alpha`
+
+The ease speed is user-adjustable:
+- minimum: `0.05 / s`
+- maximum: `20 / s`
+- default: `1 / s`
+
+The smoothing must happen in the audio processing path, not only visually in the UI. It should sound continuous and flowing.
+
+The UI graph should display the actual `currentRate` and the `targetRate`.
+
+Playhead:
+
+The playhead must represent the actual position through the original audio data. Changing the target-rate slider must NOT teleport the playhead, move it backwards, or otherwise alter its position directly.
+
+The playhead should be based on the actual source position maintained by the audio worklet. The target slider only changes future playback speed.
+
+File loading:
+
+For WAV files, parse the WAV header yourself so the displayed original sample rate is the actual file rate. For example, a 11025 Hz WAV must display `11025 Hz`, not `48000 Hz` just because the browser audio context runs at 48 kHz.
+
+For standard PCM WAV:
+- Read the `fmt ` chunk.
+- Read the original sample rate.
+- Read the PCM sample data directly when practical.
+- Support mono and stereo PCM WAV.
+- Support 8-bit and 16-bit PCM.
+
+For other formats such as MP3/OGG/FLAC/M4A, browser decoding is acceptable. After decoding, copy the resulting PCM samples into the AudioWorklet and perform the custom playback-rate processing there.
+
+Important separation:
+
+The main thread is responsible for:
+- File selection/drop handling.
+- Waveform drawing.
+- UI.
+- Sliders/buttons.
+- Graph drawing.
+
+The AudioWorklet is responsible for:
+- Actual audio output.
+- Actual sample-position advancement.
+- Actual playback-rate smoothing.
+- Looping.
+- Reporting the current playback position and current playback rate back to the UI.
+
+Do not transfer the only copy of the PCM arrays away from the main thread if the waveform still needs them. Either keep a main-thread copy and send cloned arrays to the worklet, or otherwise ensure the waveform still has valid sample data.
+
+Required UI details:
+
+1. Drag-and-drop must actually work.
+2. Clicking the drop area must open the file picker.
+3. Play must not start automatically after loading.
+4. Playback must loop continuously without restarting the source node at every loop.
+5. The waveform must remain visible after loading.
+6. The playhead must remain synchronized with the actual audio position.
+7. The graph must always render, including before playback starts.
+8. The graph must show a faint horizontal 1.000x line.
+9. Target-rate and ease sliders must show a marker at their default value.
+10. Show the actual numeric default values on those markers, not the word “default”.
+11. Default playback rate = `1.000x`.
+12. Default ease = `1 / s`.
+13. Include a Reset button that resets playback rate and ease to those defaults.
+14. Rate range = `0.25x` to `4x`.
+15. Ease range = `0.05 / s` to `20 / s`.
+16. The waveform must have a visible playhead.
+17. Stop must stop audio and reset the playhead to the start.
+18. Loading another file must fully reset playback state and UI state.
+
+Avoid these previous bugs:
+
+- Do not use `AudioBufferSourceNode.playbackRate`.
+- Do not calculate the playhead as `elapsedTime * currentRate` from the moment playback started, because changing the rate causes jumps.
+- Do not let changing `targetRate` directly modify playback position.
+- Do not autoplay on file drop.
+- Do not transfer/detach the only waveform PCM array from the main thread.
+- Do not lose the waveform after creating the AudioWorklet.
+- Do not leave Play/Stop disconnected from the actual worklet state.
+- Do not recreate the graph incorrectly so it disappears.
+- Do not assume the decoded browser sample rate is the original file sample rate.
+- Do not use Unicode icons or decorative symbols in the UI.
+- If 1.0 markers at target playback rate and ease speed can't be positioned correctly, just delete them.
+
+The final result must be a working single HTML file that can be served with:
+
+`python -m http.server 8000`
+
+and opened at:
+
+`http://localhost:8000`
+
+The priority is actual audio behavior, not merely making the graph or playhead look correct.

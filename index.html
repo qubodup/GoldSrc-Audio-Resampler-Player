@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HL1/GoldSrc Audio Resampler Player</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #38bdf8;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #38bdf8;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+        }
+        canvas {
+            image-rendering: pixelated;
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8 flex flex-col items-center justify-center">
+
+    <div class="w-full max-w-4xl bg-slate-900 border border-slate-800 rounded-xl shadow-2xl p-6 flex flex-col gap-6">
+        
+        <!-- Header -->
+        <div class="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-800 pb-4 gap-2">
+            <div>
+                <h1 class="text-xl font-bold text-slate-100 tracking-wide">GoldSrc Audio Resampler Player</h1>
+                <p class="text-xs text-slate-400 mt-1">AudioWorklet Nearest-Neighbor Resampling &amp; Exponential Rate Smoothing</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="btnPlay" disabled class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-600 text-white font-semibold rounded-lg transition shadow-md cursor-pointer disabled:cursor-not-allowed">
+                    Play Loop
+                </button>
+                <button id="btnStop" disabled class="px-5 py-2 bg-rose-600 hover:bg-rose-500 disabled:bg-slate-800 disabled:text-slate-600 text-white font-semibold rounded-lg transition shadow-md cursor-pointer disabled:cursor-not-allowed">
+                    Stop
+                </button>
+            </div>
+        </div>
+
+        <!-- File Drop Area -->
+        <div id="dropZone" class="border-2 border-dashed border-slate-700 hover:border-sky-500 bg-slate-950/50 rounded-xl p-6 text-center cursor-pointer transition flex flex-col items-center justify-center min-h-[110px]">
+            <input type="file" id="fileInput" accept="audio/*" class="hidden">
+            <p class="text-sm text-slate-300 font-medium" id="dropLabel">Drag and drop an audio file here, or click to select</p>
+            <p class="text-xs text-slate-500 mt-1" id="fileDetails">Supports WAV (direct header parse for 8/16-bit PCM), MP3, OGG, FLAC, M4A</p>
+        </div>
+
+        <!-- Audio Info Display Grid -->
+        <div class="grid grid-cols-2 md:grid-cols-6 gap-3 bg-slate-950 p-4 rounded-lg border border-slate-800/80 text-center">
+            <div class="flex flex-col">
+                <span class="text-[10px] uppercase font-semibold text-slate-500">Input Rate</span>
+                <span id="infoInputRate" class="text-sm font-mono font-bold text-sky-400">-- Hz</span>
+            </div>
+            <div class="flex flex-col">
+                <span class="text-[10px] uppercase font-semibold text-slate-500">Output Rate</span>
+                <span id="infoOutputRate" class="text-sm font-mono font-bold text-slate-300">-- Hz</span>
+            </div>
+            <div class="flex flex-col">
+                <span class="text-[10px] uppercase font-semibold text-slate-500">Duration</span>
+                <span id="infoDuration" class="text-sm font-mono font-bold text-slate-300">--:--.--</span>
+            </div>
+            <div class="flex flex-col">
+                <span class="text-[10px] uppercase font-semibold text-slate-500">Current Rate</span>
+                <span id="infoCurrentRate" class="text-sm font-mono font-bold text-emerald-400">1.000x</span>
+            </div>
+            <div class="flex flex-col">
+                <span class="text-[10px] uppercase font-semibold text-slate-500">Target Rate</span>
+                <span id="infoTargetRate" class="text-sm font-mono font-bold text-amber-400">1.000x</span>
+            </div>
+            <div class="flex flex-col">
+                <span class="text-[10px] uppercase font-semibold text-slate-500">Ease Speed</span>
+                <span id="infoEaseSpeed" class="text-sm font-mono font-bold text-indigo-400">1.00 / s</span>
+            </div>
+        </div>
+
+        <!-- Waveform Canvas -->
+        <div class="flex flex-col gap-1">
+            <div class="flex justify-between items-center text-xs text-slate-400 font-medium px-1">
+                <span>Waveform &amp; Playhead Position</span>
+                <span id="timeDisplay" class="font-mono text-slate-400">0.000s / 0.000s</span>
+            </div>
+            <div class="relative w-full h-32 bg-slate-950 border border-slate-800 rounded-lg overflow-hidden">
+                <canvas id="waveformCanvas" class="w-full h-full block"></canvas>
+            </div>
+        </div>
+
+        <!-- Rate Graph Canvas -->
+        <div class="flex flex-col gap-1">
+            <div class="flex justify-between items-center text-xs text-slate-400 font-medium px-1">
+                <span>Playback Rate History (Target vs Actual)</span>
+                <div class="flex items-center gap-4 text-[11px]">
+                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block"></span> Target</span>
+                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block"></span> Actual</span>
+                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-0.5 bg-slate-600 inline-block"></span> 1.000x Ref</span>
+                </div>
+            </div>
+            <div class="relative w-full h-32 bg-slate-950 border border-slate-800 rounded-lg overflow-hidden">
+                <canvas id="graphCanvas" class="w-full h-full block"></canvas>
+            </div>
+        </div>
+
+        <!-- Controls Section -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-950/60 p-4 rounded-xl border border-slate-800/80">
+            
+            <!-- Target Rate Slider -->
+            <div class="flex flex-col gap-2">
+                <div class="flex justify-between items-center text-xs font-semibold text-slate-300">
+                    <label for="rateSlider">Target Playback Rate</label>
+                    <span id="rateValueDisplay" class="font-mono text-amber-400">1.000x</span>
+                </div>
+                <input type="range" id="rateSlider" min="0.25" max="4.0" step="0.001" value="1.000" class="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                <div class="flex justify-between text-[11px] text-slate-500 font-mono pt-1">
+                    <span>0.250x</span>
+                    <span class="text-sky-400 font-semibold"></span>
+                    <span>4.000x</span>
+                </div>
+            </div>
+
+            <!-- Ease Speed Slider -->
+            <div class="flex flex-col gap-2">
+                <div class="flex justify-between items-center text-xs font-semibold text-slate-300">
+                    <label for="easeSlider">Ease Speed</label>
+                    <span id="easeValueDisplay" class="font-mono text-indigo-400">1.00 / s</span>
+                </div>
+                <input type="range" id="easeSlider" min="0.05" max="20.0" step="0.01" value="1.00" class="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer">
+                <div class="flex justify-between text-[11px] text-slate-500 font-mono pt-1">
+                    <span>0.05 / s</span>
+                    <span class="text-sky-400 font-semibold"></span>
+                    <span>20.00 / s</span>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Footer / Reset -->
+        <div class="flex justify-end">
+            <button id="btnReset" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg transition border border-slate-700 cursor-pointer">
+                Reset Rate &amp; Ease Defaults
+            </button>
+        </div>
+
+    </div>
+
+    <script>
+        // AudioWorkletProcessor inline code via Blob URL
+        const workletCode = `
+            class GoldSrcResamplerProcessor extends AudioWorkletProcessor {
+                constructor() {
+                    super();
+                    this.pcmBuffer = null; // Array of Float32Arrays (one per channel)
+                    this.numChannels = 0;
+                    this.totalFrames = 0;
+                    this.sourceSampleRate = 44100;
+                    this.isPlaying = false;
+                    
+                    this.sourcePosition = 0; // Fractional frame index
+                    this.targetRate = 1.0;
+                    this.currentRate = 1.0;
+                    this.easeSpeed = 1.0;
+
+                    this.port.onmessage = (e) => {
+                        const data = e.data;
+                        if (data.type === 'LOAD_AUDIO') {
+                            this.pcmBuffer = data.pcmBuffer; // Float32Array[]
+                            this.numChannels = data.numChannels;
+                            this.totalFrames = data.totalFrames;
+                            this.sourceSampleRate = data.sourceSampleRate;
+                            this.sourcePosition = 0;
+                            this.isPlaying = false;
+                        } else if (data.type === 'PLAY') {
+                            this.isPlaying = true;
+                        } else if (data.type === 'STOP') {
+                            this.isPlaying = false;
+                            this.sourcePosition = 0;
+                        } else if (data.type === 'SET_TARGET_RATE') {
+                            this.targetRate = data.value;
+                        } else if (data.type === 'SET_EASE_SPEED') {
+                            this.easeSpeed = data.value;
+                        }
+                    };
+                }
+
+                process(inputs, outputs, parameters) {
+                    const output = outputs[0];
+                    if (!output || output.length === 0) return true;
+                    
+                    const numOutChannels = output.length;
+                    const bufferSize = output[0].length;
+
+                    // If not playing or no PCM buffer loaded, output silence
+                    if (!this.isPlaying || !this.pcmBuffer || this.totalFrames === 0) {
+                        for (let c = 0; c < numOutChannels; c++) {
+                            output[c].fill(0);
+                        }
+                        this.port.postMessage({
+                            type: 'POSITION_UPDATE',
+                            sourcePosition: this.sourcePosition,
+                            currentRate: this.currentRate,
+                            targetRate: this.targetRate
+                        });
+                        return true;
+                    }
+
+                    const dt = 1.0 / sampleRate; // Output sample duration
+                    const alpha = 1.0 - Math.exp(-this.easeSpeed * dt);
+
+                    for (let i = 0; i < bufferSize; i++) {
+                        // Exponential rate smoothing per sample
+                        this.currentRate += (this.targetRate - this.currentRate) * alpha;
+
+                        // GoldSrc / HL1 style sample step calculation
+                        const sourceStep = (this.sourceSampleRate / sampleRate) * this.currentRate;
+
+                        // Nearest neighbor sample index using floor
+                        const currentFrameIndex = Math.floor(this.sourcePosition) % this.totalFrames;
+
+                        // Fill output channels
+                        for (let c = 0; c < numOutChannels; c++) {
+                            const pcmChannel = this.pcmBuffer[c % this.numChannels];
+                            output[c][i] = pcmChannel[currentFrameIndex];
+                        }
+
+                        // Advance source position and wrap continuously
+                        this.sourcePosition += sourceStep;
+                        if (this.sourcePosition >= this.totalFrames) {
+                            this.sourcePosition %= this.totalFrames;
+                        }
+                        if (this.sourcePosition < 0) {
+                            this.sourcePosition = 0;
+                        }
+                    }
+
+                    // Report position and smoothed rate back to UI
+                    this.port.postMessage({
+                        type: 'POSITION_UPDATE',
+                        sourcePosition: this.sourcePosition,
+                        currentRate: this.currentRate,
+                        targetRate: this.targetRate
+                    });
+
+                    return true;
+                }
+            }
+
+            registerProcessor('goldsrc-resampler-processor', GoldSrcResamplerProcessor);
+        `;
+
+        const workletBlob = new Blob([workletCode], { type: 'application/javascript' });
+        const workletUrl = URL.createObjectURL(workletBlob);
+    </script>
+
+    <script>
+        // DOM Elements
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const dropLabel = document.getElementById('dropLabel');
+        const fileDetails = document.getElementById('fileDetails');
+
+        const btnPlay = document.getElementById('btnPlay');
+        const btnStop = document.getElementById('btnStop');
+        const btnReset = document.getElementById('btnReset');
+
+        const rateSlider = document.getElementById('rateSlider');
+        const easeSlider = document.getElementById('easeSlider');
+        const rateValueDisplay = document.getElementById('rateValueDisplay');
+        const easeValueDisplay = document.getElementById('easeValueDisplay');
+
+        const infoInputRate = document.getElementById('infoInputRate');
+        const infoOutputRate = document.getElementById('infoOutputRate');
+        const infoDuration = document.getElementById('infoDuration');
+        const infoCurrentRate = document.getElementById('infoCurrentRate');
+        const infoTargetRate = document.getElementById('infoTargetRate');
+        const infoEaseSpeed = document.getElementById('infoEaseSpeed');
+        const timeDisplay = document.getElementById('timeDisplay');
+
+        const waveformCanvas = document.getElementById('waveformCanvas');
+        const graphCanvas = document.getElementById('graphCanvas');
+
+        // Audio State
+        let audioCtx = null;
+        let workletNode = null;
+        let mainPCM = null; // Array of Float32Arrays for UI waveform drawing
+        let originalSampleRate = 44100;
+        let totalFrames = 0;
+        let durationSeconds = 0;
+
+        // Playhead & Graph Tracking State
+        let currentSourcePosition = 0;
+        let currentPlaybackRate = 1.0;
+        let targetPlaybackRate = 1.0;
+        let easeSpeed = 1.0;
+        let isPlaying = false;
+
+        // Rate Graph History Buffer (1000 points)
+        const maxGraphPoints = 400;
+        const rateHistory = new Array(maxGraphPoints).fill(1.0);
+        const targetHistory = new Array(maxGraphPoints).fill(1.0);
+
+        // Pre-setup Canvases
+        function setupCanvasResolution(canvas) {
+            const rect = canvas.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            const ctx = canvas.getContext('2d');
+            ctx.scale(dpr, dpr);
+            return { width: rect.width, height: rect.height, ctx };
+        }
+
+        window.addEventListener('resize', () => {
+            drawWaveform();
+            drawGraph();
+        });
+
+        // Initialize Audio Context and Worklet
+        async function initAudioContext() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                await audioCtx.audioWorklet.addModule(workletUrl);
+                workletNode = new AudioWorkletNode(audioCtx, 'goldsrc-resampler-processor');
+                workletNode.connect(audioCtx.destination);
+
+                workletNode.port.onmessage = (e) => {
+                    const data = e.data;
+                    if (data.type === 'POSITION_UPDATE') {
+                        currentSourcePosition = data.sourcePosition;
+                        currentPlaybackRate = data.currentRate;
+                        targetPlaybackRate = data.targetRate;
+
+                        infoCurrentRate.textContent = currentPlaybackRate.toFixed(3) + 'x';
+                        infoTargetRate.textContent = targetPlaybackRate.toFixed(3) + 'x';
+                        
+                        // Update current time display
+                        if (originalSampleRate > 0) {
+                            const currentTime = currentSourcePosition / originalSampleRate;
+                            timeDisplay.textContent = `${currentTime.toFixed(3)}s / ${durationSeconds.toFixed(3)}s`;
+                        }
+                    }
+                };
+            }
+            if (audioCtx.state === 'suspended') {
+                await audioCtx.resume();
+            }
+            infoOutputRate.textContent = audioCtx.sampleRate + ' Hz';
+        }
+
+        // Custom Manual WAV Parser for exact sample rate detection
+        function parseWavHeader(buffer) {
+            const view = new DataView(buffer);
+            if (buffer.byteLength < 44) return null;
+
+            // Check 'RIFF' chunk
+            const riffMarker = String.fromCharCode(view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3));
+            if (riffMarker !== 'RIFF') return null;
+
+            // Check 'WAVE' format
+            const waveMarker = String.fromCharCode(view.getUint8(8), view.getUint8(9), view.getUint8(10), view.getUint8(11));
+            if (waveMarker !== 'WAVE') return null;
+
+            let offset = 12;
+            let fmtFound = false;
+            let audioFormat = 0;
+            let numChannels = 0;
+            let sampleRate = 0;
+            let bitsPerSample = 0;
+            let dataOffset = 0;
+            let dataSize = 0;
+
+            while (offset < buffer.byteLength - 8) {
+                const chunkId = String.fromCharCode(view.getUint8(offset), view.getUint8(offset + 1), view.getUint8(offset + 2), view.getUint8(offset + 3));
+                const chunkSize = view.getUint32(offset + 4, true);
+
+                if (chunkId === 'fmt ') {
+                    fmtFound = true;
+                    audioFormat = view.getUint16(offset + 8, true);
+                    numChannels = view.getUint16(offset + 10, true);
+                    sampleRate = view.getUint32(offset + 12, true);
+                    bitsPerSample = view.getUint16(offset + 22, true);
+                } else if (chunkId === 'data') {
+                    dataOffset = offset + 8;
+                    dataSize = chunkSize;
+                    break;
+                }
+                offset += 8 + chunkSize;
+            }
+
+            if (!fmtFound || dataOffset === 0) return null;
+
+            // Direct decode support for 8-bit unsigned & 16-bit signed PCM
+            if (audioFormat === 1 && (bitsPerSample === 8 || bitsPerSample === 16)) {
+                const bytesPerSample = bitsPerSample / 8;
+                const totalSamples = Math.floor(dataSize / (numChannels * bytesPerSample));
+                const pcmBuffer = [];
+
+                for (let c = 0; c < numChannels; c++) {
+                    pcmBuffer.push(new Float32Array(totalSamples));
+                }
+
+                let p = dataOffset;
+                for (let i = 0; i < totalSamples; i++) {
+                    for (let c = 0; c < numChannels; c++) {
+                        if (p >= buffer.byteLength) break;
+                        if (bitsPerSample === 8) {
+                            const val = view.getUint8(p);
+                            pcmBuffer[c][i] = (val - 128) / 128.0;
+                            p += 1;
+                        } else if (bitsPerSample === 16) {
+                            const val = view.getInt16(p, true);
+                            pcmBuffer[c][i] = val / 32768.0;
+                            p += 2;
+                        }
+                    }
+                }
+
+                return {
+                    sampleRate,
+                    numChannels,
+                    pcmBuffer,
+                    totalFrames: totalSamples
+                };
+            }
+
+            // If WAV is not 8 or 16-bit PCM, return sampleRate to preserve original rate metadata
+            return { sampleRate, pcmBuffer: null };
+        }
+
+        // Main File Loader
+        async function loadAudioFile(file) {
+            await initAudioContext();
+
+            dropLabel.textContent = `Loading: ${file.name}...`;
+            btnPlay.disabled = true;
+            btnStop.disabled = true;
+
+            const arrayBuffer = await file.arrayBuffer();
+            let parsedWav = parseWavHeader(arrayBuffer);
+
+            let pcmBuffer = null;
+            let sampleRate = 44100;
+            let numChannels = 1;
+
+            if (parsedWav && parsedWav.pcmBuffer) {
+                // Direct PCM WAV extraction
+                sampleRate = parsedWav.sampleRate;
+                pcmBuffer = parsedWav.pcmBuffer;
+                numChannels = parsedWav.numChannels;
+                totalFrames = parsedWav.totalFrames;
+            } else {
+                // Fallback to Web Audio API decoding (for MP3, OGG, FLAC, M4A, or non-standard WAV)
+                const decodedData = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
+                sampleRate = (parsedWav && parsedWav.sampleRate) ? parsedWav.sampleRate : decodedData.sampleRate;
+                numChannels = decodedData.numberOfChannels;
+                totalFrames = decodedData.length;
+
+                pcmBuffer = [];
+                for (let c = 0; c < numChannels; c++) {
+                    pcmBuffer.push(new Float32Array(decodedData.getChannelData(c)));
+                }
+            }
+
+            // Keep main-thread copy for UI rendering
+            mainPCM = pcmBuffer;
+            originalSampleRate = sampleRate;
+            durationSeconds = totalFrames / originalSampleRate;
+
+            // Create separate clone arrays to transfer/send to AudioWorklet
+            const workletPCM = pcmBuffer.map(arr => new Float32Array(arr));
+
+            // Send to worklet
+            workletNode.port.postMessage({
+                type: 'LOAD_AUDIO',
+                pcmBuffer: workletPCM,
+                numChannels: numChannels,
+                totalFrames: totalFrames,
+                sourceSampleRate: originalSampleRate
+            });
+
+            // Reset UI state
+            currentSourcePosition = 0;
+            isPlaying = false;
+
+            infoInputRate.textContent = `${originalSampleRate} Hz`;
+            infoDuration.textContent = formatTime(durationSeconds);
+            dropLabel.textContent = file.name;
+            fileDetails.textContent = `${numChannels > 1 ? 'Stereo' : 'Mono'} | ${totalFrames.toLocaleString()} frames | ${(file.size / (1024 * 1024)).toFixed(2)} MB`;
+
+            btnPlay.disabled = false;
+            btnStop.disabled = false;
+
+            drawWaveform();
+        }
+
+        function formatTime(sec) {
+            const m = Math.floor(sec / 60);
+            const s = sec % 60;
+            return `${m.toString().padStart(2, '0')}:${s.toFixed(2).padStart(5, '0')}`;
+        }
+
+        // Waveform Drawing
+        function drawWaveform() {
+            const { width, height, ctx } = setupCanvasResolution(waveformCanvas);
+            ctx.clearRect(0, 0, width, height);
+
+            if (!mainPCM || mainPCM.length === 0 || totalFrames === 0) {
+                ctx.fillStyle = '#334155';
+                ctx.font = '12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('No audio file loaded', width / 2, height / 2);
+                return;
+            }
+
+            const channelData = mainPCM[0]; // Draw first channel
+            const step = Math.ceil(totalFrames / width);
+            const mid = height / 2;
+
+            ctx.fillStyle = '#0284c7';
+            for (let x = 0; x < width; x++) {
+                const startFrame = Math.floor(x * step);
+                let min = 1.0;
+                let max = -1.0;
+
+                for (let j = 0; j < step && (startFrame + j) < totalFrames; j++) {
+                    const val = channelData[startFrame + j];
+                    if (val < min) min = val;
+                    if (val > max) max = val;
+                }
+
+                if (min > max) { min = 0; max = 0; }
+                const y1 = mid + min * (mid - 8);
+                const y2 = mid + max * (mid - 8);
+                ctx.fillRect(x, y1, 1, Math.max(1, y2 - y1));
+            }
+
+            // Draw Playhead based on actual source position
+            const playheadX = (currentSourcePosition / totalFrames) * width;
+            ctx.fillStyle = '#f43f5e';
+            ctx.fillRect(playheadX - 1, 0, 2, height);
+
+            // Playhead cap top/bottom
+            ctx.fillStyle = '#fb7185';
+            ctx.beginPath();
+            ctx.arc(playheadX, 4, 4, 0, Math.PI * 2);
+            ctx.arc(playheadX, height - 4, 4, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Rate Graph Drawing
+        function drawGraph() {
+            const { width, height, ctx } = setupCanvasResolution(graphCanvas);
+            ctx.clearRect(0, 0, width, height);
+
+            // Min and Max Y scale bounds (0.0x to 4.25x)
+            const minY = 0.0;
+            const maxY = 4.25;
+
+            const rateToY = (rate) => {
+                const norm = (rate - minY) / (maxY - minY);
+                return height - norm * height;
+            };
+
+            // Draw Grid Lines & Labels
+            ctx.strokeStyle = '#1e293b';
+            ctx.lineWidth = 1;
+            ctx.fillStyle = '#64748b';
+            ctx.font = '10px monospace';
+
+            const gridSteps = [0.5, 1.0, 2.0, 3.0, 4.0];
+            gridSteps.forEach(r => {
+                const y = rateToY(r);
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(width, y);
+                ctx.stroke();
+            });
+
+            // Faint 1.000x Reference Line
+            const refY = rateToY(1.0);
+            ctx.strokeStyle = '#475569';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath();
+            ctx.moveTo(0, refY);
+            ctx.lineTo(width, refY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillText('1.000x', 6, refY - 4);
+
+            // Shift and record rate histories
+            rateHistory.push(currentPlaybackRate);
+            rateHistory.shift();
+
+            targetHistory.push(targetPlaybackRate);
+            targetHistory.shift();
+
+            const stepX = width / (maxGraphPoints - 1);
+
+            // Draw Target Rate Line (Amber)
+            ctx.strokeStyle = '#f59e0b';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            for (let i = 0; i < maxGraphPoints; i++) {
+                const x = i * stepX;
+                const y = rateToY(targetHistory[i]);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            // Draw Actual Current Rate Line (Emerald)
+            ctx.strokeStyle = '#10b981';
+            ctx.lineWidth = 2.0;
+            ctx.beginPath();
+            for (let i = 0; i < maxGraphPoints; i++) {
+                const x = i * stepX;
+                const y = rateToY(rateHistory[i]);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+        }
+
+        // Animation Loop for UI elements
+        function animationLoop() {
+            drawWaveform();
+            drawGraph();
+            requestAnimationFrame(animationLoop);
+        }
+        requestAnimationFrame(animationLoop);
+
+        // Drag and Drop Handling
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('border-sky-500', 'bg-sky-950/20');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('border-sky-500', 'bg-sky-950/20');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-sky-500', 'bg-sky-950/20');
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                loadAudioFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files.length > 0) {
+                loadAudioFile(e.target.files[0]);
+            }
+        });
+
+        // Controls Event Handlers
+        btnPlay.addEventListener('click', async () => {
+            await initAudioContext();
+            workletNode.port.postMessage({ type: 'PLAY' });
+            isPlaying = true;
+        });
+
+        btnStop.addEventListener('click', () => {
+            if (workletNode) {
+                workletNode.port.postMessage({ type: 'STOP' });
+            }
+            isPlaying = false;
+            currentSourcePosition = 0;
+        });
+
+        rateSlider.addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            targetPlaybackRate = val;
+            rateValueDisplay.textContent = val.toFixed(3) + 'x';
+            infoTargetRate.textContent = val.toFixed(3) + 'x';
+            if (workletNode) {
+                workletNode.port.postMessage({ type: 'SET_TARGET_RATE', value: val });
+            }
+        });
+
+        easeSlider.addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            easeSpeed = val;
+            easeValueDisplay.textContent = val.toFixed(2) + ' / s';
+            infoEaseSpeed.textContent = val.toFixed(2) + ' / s';
+            if (workletNode) {
+                workletNode.port.postMessage({ type: 'SET_EASE_SPEED', value: val });
+            }
+        });
+
+        btnReset.addEventListener('click', () => {
+            rateSlider.value = 1.000;
+            easeSlider.value = 1.00;
+            
+            targetPlaybackRate = 1.000;
+            easeSpeed = 1.00;
+
+            rateValueDisplay.textContent = '1.000x';
+            easeValueDisplay.textContent = '1.00 / s';
+            
+            infoTargetRate.textContent = '1.000x';
+            infoEaseSpeed.textContent = '1.00 / s';
+
+            if (workletNode) {
+                workletNode.port.postMessage({ type: 'SET_TARGET_RATE', value: 1.000 });
+                workletNode.port.postMessage({ type: 'SET_EASE_SPEED', value: 1.00 });
+            }
+        });
+    </script>
+</body>
+</html>
